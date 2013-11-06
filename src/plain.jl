@@ -412,6 +412,10 @@ function vlenpack{T<:Union(HDF5BitsKind,CharType)}(v::HDF5Vlen{T})
     h
 end
 
+immutable HDF5Array{T,N}
+    dims::NTuple{N, Int}
+end
+
 # For group information
 immutable H5Ginfo
     storage_type::Cint
@@ -1496,6 +1500,8 @@ function hdf5_to_julia_eltype(objtype)
         T = HDF5Vlen{hdf5_to_julia_eltype(HDF5Datatype(super_id))}
     elseif class_id == H5T_COMPOUND
         T = HDF5Compound
+    elseif class_id == H5T_ARRAY
+        T = HDF5Array(objtype)
     else
         error("Class id ", class_id, " is not yet supported")
     end
@@ -1725,6 +1731,8 @@ for (jlname, h5name, outtype, argtypes, argsyms, ex_error) in
      (:h5s_get_simple_extent_type, :H5Sget_simple_extent_type, Cint, (Hid,), (:space_id,), :(error("Error getting the dataspace type"))),
      (:h5t_copy, :H5Tcopy, Hid, (Hid,), (:dtype_id,), :(error("Error copying datatype"))),
      (:h5t_create, :H5Tcreate, Hid, (Cint, Csize_t), (:class_id, :sz), :(error("Error creating datatype of id ", classid))),
+     (:h5t_get_array_dims, :H5Tget_array_dims2, Cint, (Hid, Ptr{Hsize}), (:dtype_id, :dims), :(error("Error getting dimensions of array"))),
+     (:h5t_get_array_ndims, :H5Tget_array_ndims, Cint, (Hid,), (:dtype_id,), :(error("Error getting ndims of array"))),
      (:h5t_get_class, :H5Tget_class, Cint, (Hid,), (:dtype_id,), :(error("Error getting class"))),
      (:h5t_get_cset, :H5Tget_cset, Cint, (Hid,), (:dtype_id,), :(error("Error getting character set encoding"))),
      (:h5t_get_member_class, :H5Tget_member_class, Cint, (Hid, Cuint), (:dtype_id, :index), :(error("Error getting class of compound datatype member #", index))),
@@ -1852,6 +1860,15 @@ function vlen_get_buf_size(dset::HDF5Dataset, dtype::HDF5Datatype, dspace::HDF5D
     sz = Array(Hsize, 1)
     h5d_vlen_get_buf_size(dset.id, dtype.id, dspace.id, sz)
     sz[1]
+end
+
+function HDF5Array(objtype)
+    nd = h5t_get_array_ndims(objtype.id)
+    dims = Array(Hsize, nd)
+    h5t_get_array_dims(objtype.id, dims)
+    eltype = HDF5Datatype(h5t_get_super(objtype.id))
+    T = hdf5_to_julia_eltype(eltype)
+    HDF5Array{T, int(nd)}(ntuple(nd, i->int(dims[i])))
 end
 
 ### Property manipulation ###
